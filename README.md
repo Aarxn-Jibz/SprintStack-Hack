@@ -45,7 +45,7 @@ bun test            # API tests
 {
   "depot": { "lat": 12.97, "lng": 77.59 },
   "stops": [{ "id": "a", "lat": 12.98, "lng": 77.6 }],
-  "vehicle": { "startTime": "2026-01-01T08:00:00Z", "capacity": 10 },
+  "vehicle": { "startTime": "08:00", "capacity": 10 },
   "returnToDepot": true
 }
 ```

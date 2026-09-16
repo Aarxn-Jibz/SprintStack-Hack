@@ -17,7 +17,8 @@ export function routePlanFromApi(route: ApiRoute, depot: Depot, stops: Stop[], c
   return { nodes, coords, distanceKm: route.distanceMeters / 1000, durationMin: route.totalDurationSeconds / 60, overflowCount: 0, trips: route.trips.length, totalWeightKg: stops.reduce((sum, stop) => sum + stop.weightKg, 0) };
 }
 export async function optimize(depot: Depot, stops: Stop[], capacity: number) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:3000"}/api/v1/routes/optimize`, {
+  const apiUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:3000" : "");
+  const response = await fetch(`${apiUrl}/api/v1/routes/optimize`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     signal: AbortSignal.timeout(3500),

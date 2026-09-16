@@ -5,7 +5,7 @@
 Endpoints: `GET /health`, `POST /api/v1/routes/optimize`.
 
 ```json
-{"depot":{"lat":12.97,"lng":77.59},"stops":[{"id":"a","lat":12.98,"lng":77.60}],"vehicle":{"startTime":"2026-01-01T08:00:00Z","capacity":10},"returnToDepot":true}
+{"depot":{"lat":12.97,"lng":77.59},"stops":[{"id":"a","lat":12.98,"lng":77.60}],"vehicle":{"startTime":"08:00","capacity":10},"returnToDepot":true}
 ```
 
 The API gets one road-cost matrix, evaluates the supplied manual order (or input order), builds a constraint-aware nearest-neighbor route, then applies full-route-evaluated 2-opt moves. Dijkstra belongs inside road routing, not this stop-ordering problem. Responses include both route evaluations, savings, unassigned stops, and GeoJSON geometry.
