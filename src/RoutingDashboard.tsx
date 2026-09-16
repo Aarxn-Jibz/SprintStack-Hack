@@ -233,8 +233,30 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
     setStopTags((prev) => {
       const current = prev[stopId] ?? [];
       const filtered = current.filter((t) => t !== tagToRemove);
+      if (filtered.length === 0) {
+        const next = { ...prev };
+        delete next[stopId];
+        return next;
+      }
       return { ...prev, [stopId]: filtered };
     });
+  };
+
+  // Remove a tag everywhere across all stops
+  const removeTagEverywhere = (tagToRemove: string) => {
+    setStopTags((prev) => {
+      const next: Record<string, string[]> = {};
+      for (const [id, tagList] of Object.entries(prev)) {
+        const filtered = tagList.filter((t) => t !== tagToRemove);
+        if (filtered.length > 0) {
+          next[id] = filtered;
+        }
+      }
+      return next;
+    });
+    if (selectedTagFilter === tagToRemove) {
+      setSelectedTagFilter(null);
+    }
   };
 
   // Sequentially auto-tag all stops based on current order
@@ -494,23 +516,23 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
             {/* LOCATION SEARCH INPUT BAR */}
             <div className="relative">
               <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7d8670] pointer-events-none"
+                size={16}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7d8670] pointer-events-none"
               />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search stops, tags (e.g. DEL-001), or windows..."
-                className="w-full rounded-md border border-[#2c3426] bg-[#1a1f16] py-2 pl-8 pr-8 text-[12px] text-[#e8eadf] placeholder-[#7d8670] focus:border-[#d97706] focus:outline-none"
+                className="w-full rounded-lg border border-[#2c3426] bg-[#1a1f16] py-2.5 pl-10 pr-9 text-[13px] text-[#e8eadf] placeholder-[#7d8670] focus:border-[#d97706] focus:outline-none focus:ring-1 focus:ring-[#d97706]/40 transition"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9aa38c] hover:text-[#e8eadf]"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9aa38c] hover:text-[#e8eadf] p-0.5"
                 >
-                  <X size={14} />
+                  <X size={15} />
                 </button>
               )}
             </div>
@@ -659,18 +681,33 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
                   All ({stops.length})
                 </button>
                 {allActiveTags.map((tag) => (
-                  <button
+                  <div
                     key={tag}
-                    type="button"
-                    onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-mono transition ${
+                    className={`inline-flex items-center rounded text-[10px] font-mono transition border ${
                       selectedTagFilter === tag
-                        ? "bg-[#f0b429] text-[#12150f] font-bold"
-                        : "bg-[#1a1f16] text-[#c5ccb6] border border-[#2c3426] hover:border-[#f0b429]"
+                        ? "bg-[#f0b429] text-[#12150f] border-[#f0b429] font-bold"
+                        : "bg-[#1a1f16] text-[#c5ccb6] border-[#2c3426] hover:border-[#f0b429]"
                     }`}
                   >
-                    #{tag}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
+                      className="px-1.5 py-0.5"
+                    >
+                      #{tag}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeTagEverywhere(tag);
+                      }}
+                      className="pr-1 text-[#7d8670] hover:text-[#e05252] cursor-pointer"
+                      title={`Delete tag #${tag} from all drops`}
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -1022,9 +1059,20 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
                         {tags.map((t) => (
                           <span
                             key={t}
-                            className="rounded bg-[#1a1f16] px-1.5 py-0.5 text-[10px] font-mono text-[#f0b429] border border-[#2c3426]"
+                            className="inline-flex items-center gap-1 rounded bg-[#1a1f16] px-1.5 py-0.5 text-[10px] font-mono text-[#f0b429] border border-[#2c3426]"
                           >
-                            #{t}
+                            <span>#{t}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeTag(stop.id, t);
+                              }}
+                              className="text-[#9aa38c] hover:text-[#e05252] cursor-pointer ml-0.5 transition"
+                              title={`Delete tag #${t}`}
+                            >
+                              <X size={10} />
+                            </button>
                           </span>
                         ))}
                       </div>
