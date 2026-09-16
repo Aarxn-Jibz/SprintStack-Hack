@@ -8,7 +8,7 @@ import { optimizeSchema } from "./schemas/optimize";
 
 export function createApp(provider: RoutingProvider = osrmProvider()) {
   const app = new Hono();
-  app.use("/api/*", cors({ origin: process.env.CORS_ORIGIN ?? "http://localhost:3000", allowMethods: ["POST", "OPTIONS"] }));
+  app.use("/api/*", cors({ origin: process.env.CORS_ORIGIN ?? "http://localhost:5173", allowMethods: ["POST", "OPTIONS"] }));
   app.get("/health", c => c.json({ status: "ok" }));
   app.post("/api/v1/routes/optimize", async c => {
     let body: unknown;

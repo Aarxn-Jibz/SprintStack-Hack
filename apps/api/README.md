@@ -1,6 +1,6 @@
 # SprintStack routing API
 
-`bun run dev` starts the API on port 3001. `bun test` and `bun run typecheck` validate it. Copy `.env.example` to `.env` to tune OSRM, timeout, fallback speed, port, or local CORS origin.
+`bun run dev:api` starts the API on port 3000. `bun test` and `bun run typecheck` validate it. Copy `.env.example` to `.env` to tune OSRM, timeout, fallback speed, port, or local CORS origin.
 
 Endpoints: `GET /health`, `POST /api/v1/routes/optimize`.
 
