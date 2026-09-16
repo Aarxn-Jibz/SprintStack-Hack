@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "compilerOptions": {
     "strict": true,
     "noEmit": true,
@@ -7,4 +8,11 @@
     "target": "ESNext",
     "skipLibCheck": true
   }
+=======
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+>>>>>>> 218e462 (Initial commit)
 }

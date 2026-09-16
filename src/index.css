@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Public Sans Variable", "Public Sans", ui-sans-serif, system-ui,
+    sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+  --ink: #12150f;
+  --panel: #1a1f16;
+  --line: #2c3426;
+  --paper: #e8eadf;
+  --mute: #9aa38c;
+  --saffron: #d97706;
+  --forest: #3f8f5a;
+  --signal: #c2413b;
+  --focus: #f0b429;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100dvh;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--ink);
+  color: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #d97706;
+  color: #12150f;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+aside::-webkit-scrollbar,
+.stop-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+aside::-webkit-scrollbar-thumb,
+.stop-list::-webkit-scrollbar-thumb {
+  background: #3a4432;
+  border-radius: 8px;
+}
+
+.leaflet-container {
+  background: #0e120c;
+  font-family: var(--font-sans);
+  height: 100%;
+  width: 100%;
+}
+
+.leaflet-tile-pane {
+  filter: grayscale(0.35) invert(0.92) hue-rotate(180deg) brightness(0.95)
+    contrast(0.92) saturate(0.35);
+}
+
+.leaflet-control-attribution {
+  background: rgb(18 21 15 / 0.88) !important;
+  color: #9aa38c !important;
+  font-size: 11px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #e8eadf !important;
+}
+
+.leaflet-bar a {
+  background: #1a1f16 !important;
+  color: #e8eadf !important;
+  border-bottom-color: #2c3426 !important;
+}
+
+.pin {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1.5px solid #12150f;
+  color: #12150f;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.35);
+}
+
+.pin-depot {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: #f0b429;
+}
+
+.pin-drop {
+  background: #d6dbcb;
+}
+
+.pin-done {
+  background: #3f8f5a;
+  color: #f3f6ee;
+}
+
+.pin-overflow {
+  background: #c2413b;
+  color: #f3f6ee;
+}
+
+.leaflet-tooltip.pin-tip {
+  background: #1a1f16;
+  color: #e8eadf;
+  border: 1px solid #2c3426;
+  border-radius: 6px;
+  box-shadow: none;
+}
