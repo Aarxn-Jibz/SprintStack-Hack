@@ -55,7 +55,7 @@ const WINDOWS = [
   "15:00-18:00",
 ];
 
-const LOCALES = [
+export const LOCALES = [
   "Lodi Road",
   "ITO crossing",
   "Kashmere Gate",

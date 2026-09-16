@@ -12,16 +12,24 @@ import L from "leaflet";
 import {
   ArrowLeft,
   Factory,
+  Filter,
   Fuel,
   Leaf,
+  MapPin,
   MapPinned,
   Play,
+  Plus,
+  Search,
+  Settings2,
   Shuffle,
+  Tag,
   Timer,
+  Trash2,
   Truck,
   Warehouse,
+  X,
 } from "lucide-react";
-import { DELHI_DEPOT, generateRandomStops, SAMPLE_STOPS, type Stop } from "./data";
+import { DELHI_DEPOT, generateRandomStops, LOCALES, SAMPLE_STOPS, type Stop } from "./data";
 import { optimize as optimizeApi } from "./api";
 import {
   baselinePlan,
@@ -61,6 +69,16 @@ function FitBounds({ points }: { points: [number, number][] }) {
   return null;
 }
 
+function PanToLocation({ target }: { target: { lat: number; lng: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target) {
+      map.setView([target.lat, target.lng], 14, { animate: true });
+    }
+  }, [map, target]);
+  return null;
+}
+
 function fmtKm(n: number) {
   return n.toFixed(1);
 }
@@ -73,6 +91,15 @@ function fmtPct(n: number) {
   return `${n >= 0 ? "" : "+"}${Math.abs(n).toFixed(1)}%`;
 }
 
+// Initial sample tags for demonstration
+const INITIAL_TAGS: Record<string, string[]> = {
+  s01: ["DEL-001", "EXPRESS"],
+  s02: ["DEL-002"],
+  s03: ["DEL-003", "COLD-CHAIN"],
+  s04: ["DEL-004"],
+  s05: ["DEL-005", "PRIORITY"],
+};
+
 export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
   const [stops, setStops] = useState<Stop[]>(SAMPLE_STOPS);
   const [capacity, setCapacity] = useState(100);
@@ -83,6 +110,23 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
   const [notice, setNotice] = useState<string | null>(
     "Delhi NCR docket active (20 drops, Okhla ICD depot). Click 'Run 2-Opt Optimization' to solve.",
   );
+
+  // SEARCH & TAGGING SYSTEM STATE
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
+  const [panTarget, setPanTarget] = useState<{ lat: number; lng: number; id: string } | null>(null);
+
+  // Tag configuration
+  const [tagPrefix, setTagPrefix] = useState("DEL");
+  const [tagStartNumber, setTagStartNumber] = useState(1);
+  const [tagNextNumber, setTagNextNumber] = useState(6);
+  const [showTagConfig, setShowTagConfig] = useState(false);
+  const [stopTags, setStopTags] = useState<Record<string, string[]>>(INITIAL_TAGS);
+  const [newTagInput, setNewTagInput] = useState<{ stopId: string; value: string } | null>(null);
+
+  // Add location drawer/dropdown state
+  const [showAddLocation, setShowAddLocation] = useState(false);
+  const [locationFilter, setLocationFilter] = useState("");
 
   const localBaseline = useMemo(
     () => (stops.length ? baselinePlan(DELHI_DEPOT, stops, capacity) : null),
@@ -103,7 +147,11 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
   const loadSample = () => {
     setStops(SAMPLE_STOPS);
     setStatus({});
+    setStopTags(INITIAL_TAGS);
+    setTagNextNumber(6);
     setView("both");
+    setSearchQuery("");
+    setSelectedTagFilter(null);
     setNotice("Sample Delhi NCR docket loaded. 20 drops, Okhla ICD depot.");
   };
 
@@ -111,7 +159,11 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
     const next = generateRandomStops();
     setStops(next);
     setStatus({});
+    setStopTags({});
+    setTagNextNumber(tagStartNumber);
     setView("both");
+    setSearchQuery("");
+    setSelectedTagFilter(null);
     setNotice(`Randomised ${next.length} drops inside the Delhi NCR bounding box.`);
   };
 
@@ -147,6 +199,93 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
       return { ...prev, [id]: next };
     });
   };
+
+  // TAG SYSTEM LOGIC
+  const formatTag = (prefix: string, num: number) => {
+    return `${prefix.trim().toUpperCase()}-${String(num).padStart(3, "0")}`;
+  };
+
+  // Add the next auto-incremented tag to a specific stop
+  const addNextIncrementTag = (stopId: string) => {
+    const nextTag = formatTag(tagPrefix, tagNextNumber);
+    setStopTags((prev) => {
+      const current = prev[stopId] ?? [];
+      if (current.includes(nextTag)) return prev;
+      return { ...prev, [stopId]: [...current, nextTag] };
+    });
+    setTagNextNumber((prev) => prev + 1);
+  };
+
+  // Add a custom tag or confirm manual input
+  const addCustomTag = (stopId: string, customTag: string) => {
+    const trimmed = customTag.trim().toUpperCase();
+    if (!trimmed) return;
+    setStopTags((prev) => {
+      const current = prev[stopId] ?? [];
+      if (current.includes(trimmed)) return prev;
+      return { ...prev, [stopId]: [...current, trimmed] };
+    });
+    setNewTagInput(null);
+  };
+
+  // Remove a single tag from a stop
+  const removeTag = (stopId: string, tagToRemove: string) => {
+    setStopTags((prev) => {
+      const current = prev[stopId] ?? [];
+      const filtered = current.filter((t) => t !== tagToRemove);
+      return { ...prev, [stopId]: filtered };
+    });
+  };
+
+  // Sequentially auto-tag all stops based on current order
+  const autoTagAllStops = () => {
+    let current = tagStartNumber;
+    const nextTags: Record<string, string[]> = { ...stopTags };
+    stops.forEach((stop) => {
+      const tagStr = formatTag(tagPrefix, current);
+      const existing = nextTags[stop.id] ?? [];
+      if (!existing.includes(tagStr)) {
+        nextTags[stop.id] = [...existing, tagStr];
+      }
+      current += 1;
+    });
+    setStopTags(nextTags);
+    setTagNextNumber(current);
+    setNotice(`Auto-tagged ${stops.length} stops from ${formatTag(tagPrefix, tagStartNumber)} onwards.`);
+  };
+
+  // Clear all tags
+  const clearAllTags = () => {
+    setStopTags({});
+    setTagNextNumber(tagStartNumber);
+    setSelectedTagFilter(null);
+    setNotice("All stop tags cleared.");
+  };
+
+  // Add new stop from location list
+  const addStopFromLocale = (localeName: string) => {
+    const newId = `s${String(stops.length + 1).padStart(2, "0")}`;
+    const newStop: Stop = {
+      id: newId,
+      lat: 28.51 + Math.random() * 0.22,
+      lng: 77.06 + Math.random() * 0.25,
+      name: `${localeName} drop`,
+      timeWindow: "10:00-13:00",
+      weightKg: Math.round(8 + Math.random() * 15),
+    };
+    setStops((prev) => [...prev, newStop]);
+    setShowAddLocation(false);
+    setLocationFilter("");
+    setNotice(`Added "${newStop.name}" to route.`);
+    setPanTarget({ lat: newStop.lat, lng: newStop.lng, id: newStop.id });
+  };
+
+  // All unique active tags across stops
+  const allActiveTags = useMemo(() => {
+    const set = new Set<string>();
+    Object.values(stopTags).forEach((tags) => tags.forEach((t) => set.add(t)));
+    return Array.from(set).sort();
+  }, [stopTags]);
 
   const kmSaved = baseline && optimized ? baseline.distanceKm - optimized.distanceKm : 0;
   const minSaved = baseline && optimized ? baseline.durationMin - optimized.durationMin : 0;
@@ -185,6 +324,43 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
     return set;
   }, [listPlan]);
 
+  // Filtered stops based on search query and selected tag
+  const filteredNodes = useMemo(() => {
+    if (!listPlan) return [];
+    const q = searchQuery.toLowerCase().trim();
+    return listPlan.nodes.filter((node) => {
+      if (node.kind === "depot") return !q && !selectedTagFilter; // Always show depot when not filtering
+      const stop = node.stop;
+      const tags = stopTags[stop.id] ?? [];
+
+      // Tag filter check
+      if (selectedTagFilter && !tags.includes(selectedTagFilter)) {
+        return false;
+      }
+
+      // Search query check (name, id, window, or tags)
+      if (q) {
+        const matchesName = stop.name.toLowerCase().includes(q);
+        const matchesId = stop.id.toLowerCase().includes(q);
+        const matchesWindow = stop.timeWindow.toLowerCase().includes(q);
+        const matchesTag = tags.some((t) => t.toLowerCase().includes(q));
+        return matchesName || matchesId || matchesWindow || matchesTag;
+      }
+
+      return true;
+    });
+  }, [listPlan, searchQuery, selectedTagFilter, stopTags]);
+
+  // Available locales not yet added
+  const availableLocales = useMemo(() => {
+    const existingNames = new Set(stops.map((s) => s.name.toLowerCase()));
+    return LOCALES.filter((l) => {
+      const notAdded = !existingNames.has(`${l.toLowerCase()} drop`);
+      const matchesSearch = locationFilter ? l.toLowerCase().includes(locationFilter.toLowerCase()) : true;
+      return notAdded && matchesSearch;
+    });
+  }, [stops, locationFilter]);
+
   return (
     <div className="min-h-[100dvh] bg-[#12150f] text-[#e8eadf]">
       {/* Official Government Tricolor Stripe */}
@@ -194,9 +370,9 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
         <span className="flex-1 bg-[#2f6b3c]" />
       </div>
 
-      <div className="grid min-h-[calc(100dvh-3px)] lg:grid-cols-[minmax(330px,410px)_1fr]">
+      <div className="grid min-h-[calc(100dvh-3px)] lg:grid-cols-[minmax(340px,420px)_1fr]">
         <aside className="flex max-h-[100dvh] flex-col overflow-y-auto border-b border-[#2c3426] lg:border-b-0 lg:border-r">
-          <header className="px-5 pt-4 pb-4">
+          <header className="px-5 pt-4 pb-3">
             {/* Header Top Controls: Back button & DPIIT badge */}
             <div className="flex items-center justify-between gap-2">
               <button
@@ -217,15 +393,15 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
             <h1 className="mt-3.5 text-[1.55rem] leading-[1.15] font-semibold tracking-[-0.03em] text-[#f3f6ee]">
               Last-Mile Route Optimizer
             </h1>
-            <p className="mt-1.5 max-w-[42ch] text-[13px] leading-relaxed text-[#9aa38c]">
-              Client-side dispatch for a single van. Baseline follows docket order. Solver evaluates nearest-neighbor + 2-opt on OpenStreetMap.
+            <p className="mt-1 max-w-[42ch] text-[12.5px] leading-relaxed text-[#9aa38c]">
+              Client-side dispatch engine. Search locations, configure self-incrementing tags, and evaluate 2-opt tours on OpenStreetMap.
             </p>
           </header>
 
-          <div className="px-5 pb-4">
-            <label className="flex items-center justify-between text-[13px] text-[#d6dbcb]" htmlFor="capacity">
+          <div className="px-5 pb-3">
+            <label className="flex items-center justify-between text-[12.5px] text-[#d6dbcb]" htmlFor="capacity">
               <span className="inline-flex items-center gap-1.5">
-                <Truck size={15} strokeWidth={1.75} />
+                <Truck size={14} strokeWidth={1.75} />
                 Vehicle capacity
               </span>
               <span className="tabular text-[#f0b429] font-bold">{capacity} kg</span>
@@ -238,24 +414,21 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
               step={5}
               value={capacity}
               onChange={(e) => setCapacity(Number(e.target.value))}
-              className="mt-2 w-full accent-[#d97706] cursor-pointer"
+              className="mt-1.5 w-full accent-[#d97706] cursor-pointer"
             />
-            <p className="mt-1.5 text-[11.5px] text-[#9aa38c]">
-              Stops heavier than remaining payload trigger automatic depot return loops.
-            </p>
 
-            <div className="mt-3.5 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={loadSample}
-                className="rounded-md border border-[#3a4432] bg-[#1a1f16] px-3 py-2.5 text-[13px] font-medium text-[#e8eadf] transition hover:border-[#d97706] hover:text-[#f3f6ee] active:scale-[0.98]"
+                className="rounded-md border border-[#3a4432] bg-[#1a1f16] px-3 py-2 text-[12.5px] font-medium text-[#e8eadf] transition hover:border-[#d97706] hover:text-[#f3f6ee] active:scale-[0.98]"
               >
                 Sample 20 Drops
               </button>
               <button
                 type="button"
                 onClick={loadRandom}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[#3a4432] bg-[#1a1f16] px-3 py-2.5 text-[13px] font-medium text-[#e8eadf] transition hover:border-[#d97706] active:scale-[0.98]"
+                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[#3a4432] bg-[#1a1f16] px-3 py-2 text-[12.5px] font-medium text-[#e8eadf] transition hover:border-[#d97706] active:scale-[0.98]"
               >
                 <Shuffle size={14} strokeWidth={1.75} />
                 Random 15-30
@@ -266,56 +439,281 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
               type="button"
               onClick={runOptimize}
               disabled={!stops.length}
-              className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#d97706] px-3 py-2.5 text-[13.5px] font-bold text-[#12150f] shadow-[0_2px_8px_rgba(217,119,6,0.25)] transition hover:bg-[#f0b429] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#3a4432] disabled:text-[#9aa38c]"
+              className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#d97706] px-3 py-2.5 text-[13.5px] font-bold text-[#12150f] shadow-[0_2px_8px_rgba(217,119,6,0.25)] transition hover:bg-[#f0b429] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#3a4432] disabled:text-[#9aa38c]"
             >
               <Play size={15} strokeWidth={2} />
               Run 2-Opt Optimization
             </button>
 
             {notice ? (
-              <p className="mt-2 text-[12px] leading-snug text-[#c5ccb6] bg-[#1a1f16] border border-[#2c3426] p-2 rounded" role="status">
+              <p className="mt-2 text-[11.5px] leading-snug text-[#c5ccb6] bg-[#1a1f16] border border-[#2c3426] p-2 rounded" role="status">
                 {notice}
               </p>
             ) : null}
           </div>
 
-          <section className="border-t border-[#2c3426] px-5 py-4">
-            <h2 className="text-[14.5px] font-semibold text-[#f3f6ee]">Baseline vs 2-Opt Solved</h2>
+          {/* SEARCH & TAGGING CONTROL BAR */}
+          <section className="border-t border-[#2c3426] px-5 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12.5px] font-semibold text-[#f3f6ee] flex items-center gap-1.5">
+                <Search size={13} className="text-[#f0b429]" />
+                Location Search &amp; Tags
+              </span>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowAddLocation((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition ${
+                    showAddLocation
+                      ? "bg-[#d97706] text-[#12150f]"
+                      : "border border-[#3a4432] bg-[#1a1f16] text-[#d6dbcb] hover:border-[#d97706]"
+                  }`}
+                  title="Search and add locations to docket"
+                >
+                  <Plus size={12} />
+                  Add Drop
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowTagConfig((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition ${
+                    showTagConfig
+                      ? "bg-[#f0b429] text-[#12150f]"
+                      : "border border-[#3a4432] bg-[#1a1f16] text-[#d6dbcb] hover:border-[#f0b429]"
+                  }`}
+                  title="Configure self-incrementing tags"
+                >
+                  <Tag size={12} />
+                  Tag Rules
+                </button>
+              </div>
+            </div>
+
+            {/* LOCATION SEARCH INPUT BAR */}
+            <div className="relative">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7d8670] pointer-events-none"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search stops, tags (e.g. DEL-001), or windows..."
+                className="w-full rounded-md border border-[#2c3426] bg-[#1a1f16] py-2 pl-8 pr-8 text-[12px] text-[#e8eadf] placeholder-[#7d8670] focus:border-[#d97706] focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9aa38c] hover:text-[#e8eadf]"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* ADD LOCATION ACCORDION / PICKER */}
+            {showAddLocation && (
+              <div className="mt-2.5 rounded-md border border-[#3a4432] bg-[#161a12] p-2.5">
+                <div className="flex items-center justify-between pb-1.5 border-b border-[#2c3426]">
+                  <span className="text-[11.5px] font-medium text-[#f0b429] flex items-center gap-1">
+                    <MapPin size={12} />
+                    Add Delhi NCR Location
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddLocation(false)}
+                    className="text-[#9aa38c] hover:text-[#e8eadf]"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  value={locationFilter}
+                  onChange={(e) => setLocationFilter(e.target.value)}
+                  placeholder="Filter Delhi NCR locales (e.g. Munirka, Lodi)..."
+                  className="mt-2 w-full rounded border border-[#2c3426] bg-[#12150f] px-2.5 py-1.5 text-[11.5px] text-[#e8eadf] placeholder-[#7d8670] focus:border-[#d97706] focus:outline-none"
+                />
+
+                <div className="mt-2 max-h-36 overflow-y-auto space-y-1 pr-1">
+                  {availableLocales.slice(0, 10).map((locale) => (
+                    <button
+                      key={locale}
+                      type="button"
+                      onClick={() => addStopFromLocale(locale)}
+                      className="w-full flex items-center justify-between px-2 py-1 rounded bg-[#1a1f16] text-left text-[11.5px] text-[#d6dbcb] hover:bg-[#252c1f] hover:text-[#f3f6ee]"
+                    >
+                      <span>{locale}</span>
+                      <span className="text-[10.5px] text-[#d97706] font-medium">+ Add</span>
+                    </button>
+                  ))}
+                  {availableLocales.length === 0 && (
+                    <p className="text-[11px] text-[#7d8670] py-2 text-center">
+                      No matching locales found.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAG CONFIGURATION DRAWER (Starting Tag & Self-Increment) */}
+            {showTagConfig && (
+              <div className="mt-2.5 rounded-md border border-[#3a4432] bg-[#161a12] p-2.5">
+                <div className="flex items-center justify-between pb-1.5 border-b border-[#2c3426]">
+                  <span className="text-[11.5px] font-semibold text-[#f0b429] flex items-center gap-1">
+                    <Settings2 size={12} />
+                    Tag Rules &amp; Increment Settings
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowTagConfig(false)}
+                    className="text-[#9aa38c] hover:text-[#e8eadf]"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10.5px] text-[#9aa38c] block" htmlFor="tagPrefix">
+                      Tag Prefix
+                    </label>
+                    <input
+                      id="tagPrefix"
+                      type="text"
+                      value={tagPrefix}
+                      onChange={(e) => setTagPrefix(e.target.value.toUpperCase())}
+                      placeholder="e.g. DEL, PKG"
+                      className="mt-0.5 w-full rounded border border-[#2c3426] bg-[#12150f] px-2 py-1 text-[11.5px] text-[#e8eadf] font-mono focus:border-[#d97706] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10.5px] text-[#9aa38c] block" htmlFor="tagStartNumber">
+                      Starting Tag #
+                    </label>
+                    <input
+                      id="tagStartNumber"
+                      type="number"
+                      min={1}
+                      value={tagStartNumber}
+                      onChange={(e) => {
+                        const val = Math.max(1, Number(e.target.value));
+                        setTagStartNumber(val);
+                        setTagNextNumber(val);
+                      }}
+                      className="mt-0.5 w-full rounded border border-[#2c3426] bg-[#12150f] px-2 py-1 text-[11.5px] text-[#e8eadf] tabular font-mono focus:border-[#d97706] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between text-[11px] text-[#9aa38c]">
+                  <span>Next auto-tag:</span>
+                  <span className="font-mono font-semibold text-[#f0b429]">
+                    {formatTag(tagPrefix, tagNextNumber)}
+                  </span>
+                </div>
+
+                <div className="mt-2.5 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={autoTagAllStops}
+                    className="flex-1 rounded bg-[#3f8f5a] px-2 py-1.5 text-[11.5px] font-semibold text-[#f3f6ee] transition hover:bg-[#4ea86d] active:scale-[0.98]"
+                  >
+                    Auto-Tag All Drops (1..N)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={clearAllTags}
+                    className="rounded border border-[#522522] bg-[#291615] px-2 py-1.5 text-[11px] font-medium text-[#c2413b] hover:bg-[#3d1e1c]"
+                    title="Clear all tags"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ACTIVE TAG FILTER PILLS */}
+            {allActiveTags.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10.5px] text-[#7d8670] flex items-center gap-1">
+                  <Filter size={10} />
+                  Tags:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTagFilter(null)}
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
+                    selectedTagFilter === null
+                      ? "bg-[#d97706] text-[#12150f] font-bold"
+                      : "bg-[#1a1f16] text-[#9aa38c] border border-[#2c3426]"
+                  }`}
+                >
+                  All ({stops.length})
+                </button>
+                {allActiveTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-mono transition ${
+                      selectedTagFilter === tag
+                        ? "bg-[#f0b429] text-[#12150f] font-bold"
+                        : "bg-[#1a1f16] text-[#c5ccb6] border border-[#2c3426] hover:border-[#f0b429]"
+                    }`}
+                  >
+                    #{tag}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* BASELINE VS OPTIMIZED METRICS */}
+          <section className="border-t border-[#2c3426] px-5 py-3">
+            <h2 className="text-[13.5px] font-semibold text-[#f3f6ee]">Baseline vs 2-Opt Solved</h2>
             {!baseline ? (
-              <p className="mt-2.5 text-[13px] text-[#9aa38c]">
+              <p className="mt-2 text-[12.5px] text-[#9aa38c]">
                 Empty docket. Load the sample set or generate drops to compare tours.
               </p>
             ) : (
-              <div className="mt-2.5 overflow-hidden rounded-md border border-[#2c3426]">
-                <table className="w-full text-left text-[12.5px]">
+              <div className="mt-2 overflow-hidden rounded-md border border-[#2c3426]">
+                <table className="w-full text-left text-[12px]">
                   <thead className="bg-[#1a1f16] text-[#9aa38c]">
                     <tr>
-                      <th className="px-3 py-2 font-medium">Metric</th>
-                      <th className="px-3 py-2 font-medium">Docket Order</th>
-                      <th className="px-3 py-2 font-medium text-[#3f8f5a]">2-Opt Tour</th>
+                      <th className="px-3 py-1.5 font-medium">Metric</th>
+                      <th className="px-3 py-1.5 font-medium">Docket Order</th>
+                      <th className="px-3 py-1.5 font-medium text-[#3f8f5a]">2-Opt Tour</th>
                     </tr>
                   </thead>
                   <tbody className="tabular">
                     <tr className="border-t border-[#2c3426]">
-                      <td className="px-3 py-2 text-[#c5ccb6]">Distance</td>
-                      <td className="px-3 py-2 text-[#c2413b] font-medium">{fmtKm(baseline.distanceKm)} km</td>
-                      <td className="px-3 py-2 text-[#3f8f5a] font-semibold">
+                      <td className="px-3 py-1.5 text-[#c5ccb6]">Distance</td>
+                      <td className="px-3 py-1.5 text-[#c2413b] font-medium">{fmtKm(baseline.distanceKm)} km</td>
+                      <td className="px-3 py-1.5 text-[#3f8f5a] font-semibold">
                         {optimized ? `${fmtKm(optimized.distanceKm)} km` : "—"}
                       </td>
                     </tr>
                     <tr className="border-t border-[#2c3426]">
-                      <td className="px-3 py-2 text-[#c5ccb6]">Duration</td>
-                      <td className="px-3 py-2">{fmtMin(baseline.durationMin)} min</td>
-                      <td className="px-3 py-2 text-[#3f8f5a]">
+                      <td className="px-3 py-1.5 text-[#c5ccb6]">Duration</td>
+                      <td className="px-3 py-1.5">{fmtMin(baseline.durationMin)} min</td>
+                      <td className="px-3 py-1.5 text-[#3f8f5a]">
                         {optimized ? `${fmtMin(optimized.durationMin)} min` : "—"}
                       </td>
                     </tr>
                     <tr className="border-t border-[#2c3426]">
-                      <td className="px-3 py-2 text-[#c5ccb6]">Trips / Overflow</td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1.5 text-[#c5ccb6]">Trips / Overflow</td>
+                      <td className="px-3 py-1.5">
                         1 / {baseline.overflowCount}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1.5">
                         {optimized ? `${optimized.trips} / ${optimized.overflowCount}` : "—"}
                       </td>
                     </tr>
@@ -325,109 +723,206 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
             )}
 
             {optimized && baseline ? (
-              <dl className="mt-3 grid grid-cols-3 gap-2 text-[12px]">
-                <div className="rounded-md bg-[#1a1f16] border border-[#2c3426] px-2.5 py-2">
+              <dl className="mt-2.5 grid grid-cols-3 gap-2 text-[11.5px]">
+                <div className="rounded-md bg-[#1a1f16] border border-[#2c3426] px-2 py-1.5">
                   <dt className="inline-flex items-center gap-1 text-[#9aa38c]">
-                    <MapPinned size={12} strokeWidth={1.75} />
+                    <MapPinned size={11} strokeWidth={1.75} />
                     Distance
                   </dt>
-                  <dd className="mt-1 tabular text-[15px] font-bold text-[#f3f6ee]">
+                  <dd className="mt-0.5 tabular text-[14px] font-bold text-[#f3f6ee]">
                     {fmtKm(kmSaved)} km
                   </dd>
                   <dd className="text-[#3f8f5a] font-medium">{fmtPct(kmPct)} shorter</dd>
                 </div>
 
-                <div className="rounded-md bg-[#1a1f16] border border-[#2c3426] px-2.5 py-2">
+                <div className="rounded-md bg-[#1a1f16] border border-[#2c3426] px-2 py-1.5">
                   <dt className="inline-flex items-center gap-1 text-[#9aa38c]">
-                    <Timer size={12} strokeWidth={1.75} />
+                    <Timer size={11} strokeWidth={1.75} />
                     Time
                   </dt>
-                  <dd className="mt-1 tabular text-[15px] font-bold text-[#f3f6ee]">
+                  <dd className="mt-0.5 tabular text-[14px] font-bold text-[#f3f6ee]">
                     {fmtMin(minSaved)} min
                   </dd>
                   <dd className="text-[#3f8f5a] font-medium">{fmtPct(minPct)} faster</dd>
                 </div>
 
-                <div className="rounded-md bg-[#1a1f16] border border-[#2c3426] px-2.5 py-2">
+                <div className="rounded-md bg-[#1a1f16] border border-[#2c3426] px-2 py-1.5">
                   <dt className="inline-flex items-center gap-1 text-[#9aa38c]">
-                    <Leaf size={12} strokeWidth={1.75} />
+                    <Leaf size={11} strokeWidth={1.75} />
                     Carbon
                   </dt>
-                  <dd className="mt-1 tabular text-[15px] font-bold text-[#f3f6ee]">
+                  <dd className="mt-0.5 tabular text-[14px] font-bold text-[#f3f6ee]">
                     {co2Saved.toFixed(1)} kg
                   </dd>
                   <dd className="inline-flex items-center gap-1 text-[#9aa38c]">
-                    <Fuel size={11} strokeWidth={1.75} />
+                    <Fuel size={10} strokeWidth={1.75} />
                     {fuelSaved.toFixed(1)} L
                   </dd>
                 </div>
               </dl>
             ) : null}
-
-            <p className="mt-2 text-[11px] leading-snug text-[#7d8670]">
-              Duration assumes 18 km/h urban speed plus 4 min dwell per drop. Carbon calculation: 0.21 kg CO₂ per km for a BS-VI LCV.
-            </p>
           </section>
 
-          <section className="flex min-h-0 flex-1 flex-col border-t border-[#2c3426] px-5 py-4">
+          {/* VISIT SEQUENCE & TAGGED STOP LIST */}
+          <section className="flex min-h-0 flex-1 flex-col border-t border-[#2c3426] px-5 py-3">
             <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-[14.5px] font-semibold text-[#f3f6ee]">Visit Sequence</h2>
-              <p className="text-[11.5px] text-[#9aa38c]">
-                {stops.length ? `${stops.length} drops` : "No drops"} · Click row to cycle status
+              <h2 className="text-[13.5px] font-semibold text-[#f3f6ee]">Visit Sequence</h2>
+              <p className="text-[11px] text-[#9aa38c]">
+                {filteredNodes.length} shown · Click row to cycle status
               </p>
             </div>
 
-            {!listPlan || stops.length === 0 ? (
-              <div className="mt-4 rounded-md border border-dashed border-[#3a4432] px-4 py-6 text-center text-[13px] text-[#9aa38c]">
-                The stop list fills after loading a docket. Sequence numbers follow the green tour once solved.
+            {filteredNodes.length === 0 ? (
+              <div className="mt-3 rounded-md border border-dashed border-[#3a4432] px-4 py-6 text-center text-[12.5px] text-[#9aa38c]">
+                {searchQuery || selectedTagFilter
+                  ? "No stops match current search or tag filter."
+                  : "The stop list fills after loading a docket."}
               </div>
             ) : (
-              <ol className="stop-list mt-2.5 max-h-[36vh] space-y-1 overflow-y-auto pr-1 lg:max-h-none">
-                {listPlan.nodes.map((node, i) => {
+              <ol className="stop-list mt-2 max-h-[32vh] space-y-1.5 overflow-y-auto pr-1 lg:max-h-none">
+                {filteredNodes.map((node, i) => {
                   if (node.kind === "depot") {
                     return (
                       <li
                         key={`${i}-depot`}
-                        className="flex items-center gap-2 rounded-md bg-[#1a1f16]/60 px-2 py-1.5 text-[12px] text-[#f0b429]"
+                        className="flex items-center gap-2 rounded-md bg-[#1a1f16]/60 px-2 py-1.5 text-[11.5px] text-[#f0b429]"
                       >
-                        <Warehouse size={14} strokeWidth={1.75} />
+                        <Warehouse size={13} strokeWidth={1.75} />
                         <span className="font-semibold">{node.name}</span>
                         <span className="text-[#7d8670]">{i === 0 ? "(Departure)" : "(Reload Return)"}</span>
                       </li>
                     );
                   }
-                  const st = status[node.stop.id] ?? "pending";
+
+                  const stop = node.stop;
+                  const st = status[stop.id] ?? "pending";
+                  const tags = stopTags[stop.id] ?? [];
+                  const isAddingTag = newTagInput?.stopId === stop.id;
+
                   return (
-                    <li key={node.stop.id}>
-                      <button
-                        type="button"
-                        onClick={() => cycleStatus(node.stop.id)}
-                        className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition hover:bg-[#1a1f16]"
-                      >
-                        <span className="tabular mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#d6dbcb] text-[11px] font-bold text-[#12150f]">
-                          {node.visitIndex}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium text-[#f3f6ee]">
-                            {node.stop.name}
-                          </span>
-                          <span className="block text-[11px] text-[#9aa38c]">
-                            Window {node.stop.timeWindow} · {node.stop.weightKg} kg · trip {node.trip}
-                            {node.overflow ? " · overflow" : ""}
-                          </span>
-                        </span>
-                        <span
-                          className={`text-[11px] font-semibold uppercase ${
-                            st === "done"
-                              ? "text-[#3f8f5a]"
-                              : st === "held"
-                                ? "text-[#c2413b]"
-                                : "text-[#7d8670]"
-                          }`}
+                    <li
+                      key={stop.id}
+                      className="rounded-md border border-[#2c3426] bg-[#1a1f16]/80 p-2 transition hover:border-[#3a4432]"
+                    >
+                      <div className="flex w-full items-start gap-2">
+                        {/* Sequence number badge */}
+                        <button
+                          type="button"
+                          onClick={() => setPanTarget({ lat: stop.lat, lng: stop.lng, id: stop.id })}
+                          title="Click to center on map"
+                          className="tabular mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[#d6dbcb] text-[10.5px] font-bold text-[#12150f] hover:bg-[#f0b429]"
                         >
-                          {st}
-                        </span>
-                      </button>
+                          {node.visitIndex}
+                        </button>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <button
+                              type="button"
+                              onClick={() => cycleStatus(stop.id)}
+                              className="truncate text-left font-medium text-[12.5px] text-[#f3f6ee] hover:text-[#f0b429]"
+                            >
+                              {stop.name}
+                            </button>
+
+                            <span
+                              onClick={() => cycleStatus(stop.id)}
+                              className={`cursor-pointer text-[10.5px] font-semibold uppercase ${
+                                st === "done"
+                                  ? "text-[#3f8f5a]"
+                                  : st === "held"
+                                    ? "text-[#c2413b]"
+                                    : "text-[#7d8670]"
+                              }`}
+                            >
+                              {st}
+                            </span>
+                          </div>
+
+                          <div className="mt-0.5 text-[11px] text-[#9aa38c]">
+                            {stop.timeWindow} · {stop.weightKg} kg · trip {node.trip}
+                            {node.overflow ? " · overflow" : ""}
+                          </div>
+
+                          {/* TAG CHIPS ROW */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                            {tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1 rounded bg-[#12150f] px-1.5 py-0.5 text-[10px] font-mono text-[#d6dbcb] border border-[#2c3426]"
+                              >
+                                #{tag}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeTag(stop.id, tag);
+                                  }}
+                                  className="text-[#7d8670] hover:text-[#c2413b]"
+                                  title={`Remove tag #${tag}`}
+                                >
+                                  <X size={10} />
+                                </button>
+                              </span>
+                            ))}
+
+                            {/* Self-Incrementing Quick Tag Button */}
+                            <button
+                              type="button"
+                              onClick={() => addNextIncrementTag(stop.id)}
+                              className="inline-flex items-center gap-0.5 rounded border border-dashed border-[#3a4432] bg-[#12150f]/60 px-1.5 py-0.5 text-[9.5px] font-mono text-[#f0b429] hover:border-[#f0b429]"
+                              title={`Add next auto tag (${formatTag(tagPrefix, tagNextNumber)})`}
+                            >
+                              <Plus size={9} />
+                              {formatTag(tagPrefix, tagNextNumber)}
+                            </button>
+
+                            {/* Custom Tag Input Toggle */}
+                            {!isAddingTag ? (
+                              <button
+                                type="button"
+                                onClick={() => setNewTagInput({ stopId: stop.id, value: "" })}
+                                className="rounded px-1 py-0.5 text-[9.5px] text-[#7d8670] hover:text-[#e8eadf]"
+                                title="Add custom tag"
+                              >
+                                + Custom
+                              </button>
+                            ) : (
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  addCustomTag(stop.id, newTagInput.value);
+                                }}
+                                className="inline-flex items-center gap-1"
+                              >
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={newTagInput.value}
+                                  onChange={(e) =>
+                                    setNewTagInput({ stopId: stop.id, value: e.target.value })
+                                  }
+                                  placeholder="Tag name"
+                                  className="w-16 rounded border border-[#d97706] bg-[#12150f] px-1 py-0.5 text-[9.5px] text-[#e8eadf] font-mono focus:outline-none"
+                                />
+                                <button
+                                  type="submit"
+                                  className="rounded bg-[#d97706] px-1 py-0.5 text-[9px] font-bold text-[#12150f]"
+                                >
+                                  Add
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewTagInput(null)}
+                                  className="text-[#7d8670] hover:text-[#e8eadf]"
+                                >
+                                  <X size={10} />
+                                </button>
+                              </form>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </li>
                   );
                 })}
@@ -450,6 +945,7 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             <FitBounds points={boundPts} />
+            <PanToLocation target={panTarget} />
 
             {/* Baseline Route: Red dashed */}
             {showBase && baseline ? (
@@ -490,12 +986,18 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
               const st = status[stop.id] ?? "pending";
               const n = visitById.get(stop.id);
               const overflow = overflowIds.has(stop.id);
+              const tags = stopTags[stop.id] ?? [];
+              const isHighlighted = panTarget?.id === stop.id;
+
               const cls =
                 overflow && st !== "done"
                   ? "pin pin-overflow"
                   : st === "done"
                     ? "pin pin-done"
-                    : "pin pin-drop";
+                    : isHighlighted
+                      ? "pin pin-depot"
+                      : "pin pin-drop";
+
               return (
                 <Marker
                   key={stop.id}
@@ -505,14 +1007,42 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
                   <Tooltip className="pin-tip" direction="top">
                     {n ? `${n}. ` : ""}
                     {stop.name}
+                    {tags.length > 0 ? ` [${tags.join(", ")}]` : ""}
                   </Tooltip>
                   <Popup>
-                    <strong>{stop.name}</strong>
-                    <br />
-                    Window {stop.timeWindow}
-                    <br />
-                    Payload: {stop.weightKg} kg
-                    {overflow ? " · exceeds vehicle capacity" : ""}
+                    <div className="text-[12px] leading-snug">
+                      <strong>{stop.name}</strong>
+                      <div className="mt-1 text-[#9aa38c]">
+                        Window: {stop.timeWindow} · Weight: {stop.weightKg} kg
+                        {overflow ? " · exceeds capacity" : ""}
+                      </div>
+
+                      {/* Display tags in popup */}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {tags.map((t) => (
+                          <span
+                            key={t}
+                            className="rounded bg-[#1a1f16] px-1.5 py-0.5 text-[10px] font-mono text-[#f0b429] border border-[#2c3426]"
+                          >
+                            #{t}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Quick Tag add inside popup */}
+                      <div className="mt-2 pt-1.5 border-t border-[#2c3426] flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => addNextIncrementTag(stop.id)}
+                          className="text-[10px] font-mono text-[#d97706] hover:underline"
+                        >
+                          + Tag {formatTag(tagPrefix, tagNextNumber)}
+                        </button>
+                        <span className="text-[10px] uppercase font-semibold text-[#3f8f5a]">
+                          {st}
+                        </span>
+                      </div>
+                    </div>
                   </Popup>
                 </Marker>
               );
