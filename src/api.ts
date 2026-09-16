@@ -17,7 +17,26 @@ export function routePlanFromApi(route: ApiRoute, depot: Depot, stops: Stop[], c
   return { nodes, coords, distanceKm: route.distanceMeters / 1000, durationMin: route.totalDurationSeconds / 60, overflowCount: 0, trips: route.trips.length, totalWeightKg: stops.reduce((sum, stop) => sum + stop.weightKg, 0) };
 }
 export async function optimize(depot: Depot, stops: Stop[], capacity: number) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:3000"}/api/v1/routes/optimize`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ depot, stops: stops.map(stop => ({ id: stop.id, name: stop.name, lat: stop.lat, lng: stop.lng, demand: stop.weightKg, serviceMinutes: 4, timeWindow: clockWindow(stop.timeWindow) })), manualOrder: stops.map(stop => stop.id), vehicle: { capacity, startTime: "08:00" }, returnToDepot: true }) });
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:3000"}/api/v1/routes/optimize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(3500),
+    body: JSON.stringify({
+      depot,
+      stops: stops.map((stop) => ({
+        id: stop.id,
+        name: stop.name,
+        lat: stop.lat,
+        lng: stop.lng,
+        demand: stop.weightKg,
+        serviceMinutes: 4,
+        timeWindow: clockWindow(stop.timeWindow),
+      })),
+      manualOrder: stops.map((stop) => stop.id),
+      vehicle: { capacity, startTime: "08:00" },
+      returnToDepot: true,
+    }),
+  });
   if (!response.ok) throw new Error("Optimization request failed");
   const result = await response.json() as ApiResult;
   return { baseline: routePlanFromApi(result.baseline, depot, stops, capacity), optimized: routePlanFromApi(result.optimized, depot, stops, capacity), unassigned: result.unassignedStops, degraded: result.routing.degraded };

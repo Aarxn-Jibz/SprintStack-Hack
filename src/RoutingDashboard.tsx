@@ -29,7 +29,15 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
-import { DELHI_DEPOT, generateRandomStops, LOCALES, SAMPLE_STOPS, type Stop } from "./data";
+import {
+  DELHI_DEPOT,
+  DELHI_LOCATIONS,
+  generateRandomStops,
+  LOCALES,
+  SAMPLE_STOPS,
+  type DelhiPlace,
+  type Stop,
+} from "./data";
 import { optimize as optimizeApi } from "./api";
 import {
   baselinePlan,
@@ -59,13 +67,14 @@ function pinIcon(html: string) {
 
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap();
+  const serialized = useMemo(() => points.map((p) => `${p[0]},${p[1]}`).join(";"), [points]);
   useEffect(() => {
     if (points.length < 2) {
       map.setView([DELHI_DEPOT.lat, DELHI_DEPOT.lng], 11);
       return;
     }
     map.fitBounds(L.latLngBounds(points), { padding: [36, 36], maxZoom: 13 });
-  }, [map, points]);
+  }, [map, serialized]);
   return null;
 }
 
@@ -113,6 +122,7 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
 
   // SEARCH & TAGGING SYSTEM STATE
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
   const [panTarget, setPanTarget] = useState<{ lat: number; lng: number; id: string } | null>(null);
 
@@ -413,6 +423,55 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
     });
   }, [stops, locationFilter]);
 
+  // Search recommendations: matching existing drops + matching Delhi NCR places
+  const searchRecommendations = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return { stops: [], places: [] };
+
+    const matchingStops = stops.filter((stop) => {
+      const tags = stopTags[stop.id] ?? [];
+      return (
+        stop.name.toLowerCase().includes(q) ||
+        stop.id.toLowerCase().includes(q) ||
+        stop.timeWindow.toLowerCase().includes(q) ||
+        tags.some((t) => t.toLowerCase().includes(q))
+      );
+    });
+
+    const matchingPlaces = DELHI_LOCATIONS.filter((place) => {
+      return (
+        place.name.toLowerCase().includes(q) ||
+        place.zone.toLowerCase().includes(q)
+      );
+    }).slice(0, 8);
+
+    return { stops: matchingStops, places: matchingPlaces };
+  }, [searchQuery, stops, stopTags]);
+
+  const selectStopRecommendation = (stop: Stop) => {
+    setPanTarget({ lat: stop.lat, lng: stop.lng, id: stop.id });
+    setIsSearchFocused(false);
+    const n = visitById.get(stop.id);
+    setNotice(`Focused on ${stop.name} (Drop #${n ?? stop.id}) on map.`);
+  };
+
+  const addPlaceRecommendation = (place: DelhiPlace) => {
+    const newId = `s${String(stops.length + 1).padStart(2, "0")}`;
+    const newStop: Stop = {
+      id: newId,
+      lat: place.lat,
+      lng: place.lng,
+      name: place.name,
+      timeWindow: "10:00-13:00",
+      weightKg: Math.round(8 + Math.random() * 14),
+    };
+    setStops((prev) => [...prev, newStop]);
+    setPanTarget({ lat: newStop.lat, lng: newStop.lng, id: newStop.id });
+    setSearchQuery("");
+    setIsSearchFocused(false);
+    setNotice(`Added "${place.name}" to route and map.`);
+  };
+
   return (
     <div className="min-h-[100dvh] bg-[#12150f] text-[#e8eadf]">
       {/* Official Government Tricolor Stripe */}
@@ -565,7 +624,7 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
               </div>
             </div>
 
-            {/* LOCATION SEARCH INPUT BAR */}
+            {/* LOCATION SEARCH INPUT BAR WITH RECOMMENDATIONS */}
             <div className="relative">
               <Search
                 size={16}
@@ -574,18 +633,156 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search stops, tags (e.g. DEL-001), or windows..."
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => {
+                  setTimeout(() => setIsSearchFocused(false), 200);
+                }}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchFocused(true);
+                }}
+                placeholder="Search places (e.g. Saket, CP, Noida), tags, or drops..."
                 className="w-full rounded-lg border border-[#2c3426] bg-[#1a1f16] py-2.5 pl-10 pr-9 text-[13px] text-[#e8eadf] placeholder-[#7d8670] focus:border-[#d97706] focus:outline-none focus:ring-1 focus:ring-[#d97706]/40 transition"
               />
               {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery("")}
+                  onClick={() => {
+                    setSearchQuery("");
+                    setIsSearchFocused(false);
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9aa38c] hover:text-[#e8eadf] p-0.5"
                 >
                   <X size={15} />
                 </button>
+              )}
+
+              {/* SEARCH RECOMMENDATIONS DROPDOWN */}
+              {isSearchFocused && searchQuery.trim().length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-[1000] mt-1.5 max-h-72 overflow-y-auto rounded-lg border border-[#3a4432] bg-[#161a12] p-1.5 shadow-2xl backdrop-blur-md">
+                  {searchRecommendations.stops.length === 0 && searchRecommendations.places.length === 0 ? (
+                    <div className="px-3 py-3 text-center text-[12px] text-[#9aa38c]">
+                      No places or drops found matching <span className="text-[#f0b429]">"{searchQuery}"</span>
+                      <div className="mt-2 text-[10.5px] text-[#7d8670]">
+                        Try searching for <span className="text-[#e8eadf]">Saket</span>, <span className="text-[#e8eadf]">Connaught Place</span>, <span className="text-[#e8eadf]">Noida</span>, or <span className="text-[#e8eadf]">Dwarka</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Section 1: Matching Drops Currently on Map */}
+                      {searchRecommendations.stops.length > 0 && (
+                        <div>
+                          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#7d8670] flex items-center justify-between">
+                            <span>Drops on Map ({searchRecommendations.stops.length})</span>
+                            <span className="text-[9px] text-[#9aa38c]">Click to pan map</span>
+                          </div>
+                          <div className="space-y-0.5">
+                            {searchRecommendations.stops.map((stop) => {
+                              const n = visitById.get(stop.id);
+                              const tags = stopTags[stop.id] ?? [];
+                              return (
+                                <button
+                                  key={stop.id}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    selectStopRecommendation(stop);
+                                  }}
+                                  className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[12px] transition hover:bg-[#20271b] group"
+                                >
+                                  <div className="min-w-0 flex-1 flex items-center gap-2">
+                                    <span className="tabular grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#d6dbcb] text-[9.5px] font-bold text-[#12150f] group-hover:bg-[#f0b429]">
+                                      {n ?? "•"}
+                                    </span>
+                                    <div className="truncate">
+                                      <span className="font-medium text-[#f3f6ee] group-hover:text-[#f0b429]">
+                                        {stop.name}
+                                      </span>
+                                      <span className="ml-2 text-[10.5px] text-[#9aa38c]">
+                                        {stop.timeWindow} · {stop.weightKg}kg
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                                    {tags.map((t) => (
+                                      <span
+                                        key={t}
+                                        className="rounded bg-[#12150f] px-1 py-0.2 text-[9px] font-mono text-[#f0b429] border border-[#2c3426]"
+                                      >
+                                        #{t}
+                                      </span>
+                                    ))}
+                                    <span className="text-[10px] text-[#3f8f5a] font-medium bg-[#1a2e20] px-1.5 py-0.5 rounded border border-[#234c2c]">
+                                      On Map
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Section 2: Delhi NCR Locations to Add */}
+                      {searchRecommendations.places.length > 0 && (
+                        <div>
+                          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#7d8670] flex items-center justify-between border-t border-[#2c3426] pt-1.5">
+                            <span>Delhi NCR Places ({searchRecommendations.places.length})</span>
+                            <span className="text-[9px] text-[#9aa38c]">Click to add drop</span>
+                          </div>
+                          <div className="space-y-0.5">
+                            {searchRecommendations.places.map((place) => {
+                              const alreadyAdded = stops.some(
+                                (s) =>
+                                  s.name.toLowerCase().includes(place.name.toLowerCase()) ||
+                                  (Math.abs(s.lat - place.lat) < 0.002 && Math.abs(s.lng - place.lng) < 0.002),
+                              );
+                              return (
+                                <button
+                                  key={place.name}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    if (alreadyAdded) {
+                                      const existing = stops.find((s) =>
+                                        s.name.toLowerCase().includes(place.name.toLowerCase()),
+                                      );
+                                      if (existing) selectStopRecommendation(existing);
+                                    } else {
+                                      addPlaceRecommendation(place);
+                                    }
+                                  }}
+                                  className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[12px] transition hover:bg-[#20271b] group"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <MapPin size={13} className="text-[#f0b429] shrink-0" />
+                                    <div className="truncate">
+                                      <span className="font-medium text-[#f3f6ee] group-hover:text-[#f0b429]">
+                                        {place.name}
+                                      </span>
+                                      <span className="ml-2 text-[10.5px] text-[#7d8670]">
+                                        {place.zone}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`shrink-0 text-[10.5px] font-medium px-2 py-0.5 rounded transition ${
+                                      alreadyAdded
+                                        ? "bg-[#1f251a] text-[#9aa38c] border border-[#2c3426]"
+                                        : "bg-[#d97706]/20 text-[#f0b429] border border-[#d97706]/40 group-hover:bg-[#d97706] group-hover:text-[#12150f]"
+                                    }`}
+                                  >
+                                    {alreadyAdded ? "On Docket" : "+ Add Drop"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
