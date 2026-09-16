@@ -233,6 +233,7 @@ export function baselinePlan(depot: Depot, stops: Stop[], capacity: number): Rou
   return assemble(depot, stops, trips, capacity);
 }
 
+/** @deprecated The API is the production optimizer; retained only as a local fallback helper. */
 export function optimizedPlan(depot: Depot, stops: Stop[], capacity: number): RoutePlan {
   if (stops.length === 0) return baselinePlan(depot, stops, capacity);
   const points = [depot, ...stops];

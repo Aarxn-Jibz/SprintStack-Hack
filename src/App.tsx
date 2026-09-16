@@ -21,11 +21,11 @@ import {
   Warehouse,
 } from "lucide-react";
 import { DELHI_DEPOT, generateRandomStops, SAMPLE_STOPS, type Stop } from "./data";
+import { optimize as optimizeApi } from "./api";
 import {
   baselinePlan,
   carbonKg,
   fuelLitres,
-  optimizedPlan,
   pctSaved,
   type RoutePlan,
 } from "./routing";
@@ -71,23 +71,25 @@ export default function App() {
   const [stops, setStops] = useState<Stop[]>([]);
   const [capacity, setCapacity] = useState(100);
   const [optimized, setOptimized] = useState<RoutePlan | null>(null);
+  const [apiBaseline, setApiBaseline] = useState<RoutePlan | null>(null);
   const [view, setView] = useState<RouteView>("both");
   const [status, setStatus] = useState<Record<string, StopStatus>>({});
   const [notice, setNotice] = useState<string | null>(null);
 
-  const baseline = useMemo(
+  const localBaseline = useMemo(
     () => (stops.length ? baselinePlan(DELHI_DEPOT, stops, capacity) : null),
     [stops, capacity],
   );
+  const baseline = apiBaseline ?? localBaseline;
 
   useEffect(() => {
     setOptimized(null);
+    setApiBaseline(null);
   }, [stops]);
 
   useEffect(() => {
-    setOptimized((prev) =>
-      prev && stops.length ? optimizedPlan(DELHI_DEPOT, stops, capacity) : prev,
-    );
+    setOptimized(null);
+    setApiBaseline(null);
   }, [capacity]);
 
   const loadSample = () => {
@@ -105,14 +107,20 @@ export default function App() {
     setNotice(`Randomised ${next.length} drops inside the Delhi NCR box.`);
   };
 
-  const runOptimize = () => {
+  const runOptimize = async () => {
     if (!stops.length) {
       setNotice("Load a docket before running the solver.");
       return;
     }
-    setOptimized(optimizedPlan(DELHI_DEPOT, stops, capacity));
-    setView("both");
-    setNotice("Nearest-neighbour plus 2-opt complete. Green path is the candidate tour.");
+    try {
+      const result = await optimizeApi(DELHI_DEPOT, stops, capacity);
+      setApiBaseline(result.baseline);
+      setOptimized(result.optimized);
+      setView("both");
+      setNotice(result.unassigned.length ? `Unassigned: ${result.unassigned.map(stop => `${stop.id} (${stop.reason})`).join(", ")}` : `Nearest-neighbour plus 2-opt complete${result.degraded ? " using fallback routing" : ""}.`);
+    } catch {
+      setNotice("Optimization API is unavailable. Start it with bun run dev:api.");
+    }
   };
 
   const cycleStatus = (id: string) => {
