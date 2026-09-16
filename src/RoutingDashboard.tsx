@@ -259,6 +259,36 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
     }
   };
 
+  // Remove a single stop/mark completely from the map & docket
+  const removeStop = (stopId: string) => {
+    setStops((prev) => prev.filter((s) => s.id !== stopId));
+    setStopTags((prev) => {
+      const next = { ...prev };
+      delete next[stopId];
+      return next;
+    });
+    setStatus((prev) => {
+      const next = { ...prev };
+      delete next[stopId];
+      return next;
+    });
+    setPanTarget((prev) => (prev?.id === stopId ? null : prev));
+    setNotice(`Removed drop ${stopId} from the map.`);
+  };
+
+  // Remove the entire marks from the map
+  const clearAllStops = () => {
+    setStops([]);
+    setStopTags({});
+    setStatus({});
+    setOptimized(null);
+    setApiBaseline(null);
+    setSelectedTagFilter(null);
+    setSearchQuery("");
+    setPanTarget(null);
+    setNotice("All marks removed from map.");
+  };
+
   // Sequentially auto-tag all stops based on current order
   const autoTagAllStops = () => {
     let current = tagStartNumber;
@@ -439,21 +469,31 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
               className="mt-1.5 w-full accent-[#d97706] cursor-pointer"
             />
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
               <button
                 type="button"
                 onClick={loadSample}
-                className="rounded-md border border-[#3a4432] bg-[#1a1f16] px-3 py-2 text-[12.5px] font-medium text-[#e8eadf] transition hover:border-[#d97706] hover:text-[#f3f6ee] active:scale-[0.98]"
+                className="rounded-md border border-[#3a4432] bg-[#1a1f16] px-2 py-2 text-[11.5px] font-medium text-[#e8eadf] transition hover:border-[#d97706] hover:text-[#f3f6ee] active:scale-[0.98]"
               >
-                Sample 20 Drops
+                Sample 20
               </button>
               <button
                 type="button"
                 onClick={loadRandom}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[#3a4432] bg-[#1a1f16] px-3 py-2 text-[12.5px] font-medium text-[#e8eadf] transition hover:border-[#d97706] active:scale-[0.98]"
+                className="inline-flex items-center justify-center gap-1 rounded-md border border-[#3a4432] bg-[#1a1f16] px-2 py-2 text-[11.5px] font-medium text-[#e8eadf] transition hover:border-[#d97706] active:scale-[0.98]"
               >
-                <Shuffle size={14} strokeWidth={1.75} />
-                Random 15-30
+                <Shuffle size={13} strokeWidth={1.75} />
+                Random
+              </button>
+              <button
+                type="button"
+                onClick={clearAllStops}
+                disabled={!stops.length}
+                className="inline-flex items-center justify-center gap-1 rounded-md border border-[#522522] bg-[#291615] px-2 py-2 text-[11.5px] font-medium text-[#c2413b] transition hover:bg-[#3d1e1c] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Remove the entire marks from the map"
+              >
+                <Trash2 size={12} />
+                Clear Map
               </button>
             </div>
 
@@ -510,6 +550,18 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
                   <Tag size={12} />
                   Tag Rules
                 </button>
+
+                {allActiveTags.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearAllTags}
+                    className="inline-flex items-center gap-1 rounded border border-[#522522] bg-[#291615] px-2 py-1 text-[11px] font-medium text-[#c2413b] hover:bg-[#3d1e1c] transition"
+                    title="Remove all tags from the entire map"
+                  >
+                    <Trash2 size={11} />
+                    Clear Tags
+                  </button>
+                )}
               </div>
             </div>
 
@@ -709,6 +761,15 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
                     </button>
                   </div>
                 ))}
+                <button
+                  type="button"
+                  onClick={clearAllTags}
+                  className="ml-auto inline-flex items-center gap-1 rounded border border-[#522522] bg-[#291615] px-1.5 py-0.5 text-[10px] font-medium text-[#c2413b] hover:bg-[#3d1e1c] transition"
+                  title="Remove all tags from the entire map"
+                >
+                  <Trash2 size={10} />
+                  Remove All Tags
+                </button>
               </div>
             )}
           </section>
@@ -811,9 +872,25 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
 
             {filteredNodes.length === 0 ? (
               <div className="mt-3 rounded-md border border-dashed border-[#3a4432] px-4 py-6 text-center text-[12.5px] text-[#9aa38c]">
-                {searchQuery || selectedTagFilter
-                  ? "No stops match current search or tag filter."
-                  : "The stop list fills after loading a docket."}
+                {stops.length === 0 ? (
+                  <div>
+                    <p className="text-[#f3f6ee] font-medium">All marks removed from map.</p>
+                    <p className="mt-1 text-[11px] text-[#7d8670]">
+                      Map is clear. Load sample drops or add new locations above.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={loadSample}
+                      className="mt-3 rounded bg-[#d97706] px-3 py-1.5 text-[11.5px] font-bold text-[#12150f] hover:bg-[#f0b429] transition active:scale-[0.98]"
+                    >
+                      Load Sample 20 Drops
+                    </button>
+                  </div>
+                ) : searchQuery || selectedTagFilter ? (
+                  "No stops match current search or tag filter."
+                ) : (
+                  "The stop list fills after loading a docket."
+                )}
               </div>
             ) : (
               <ol className="stop-list mt-2 max-h-[32vh] space-y-1.5 overflow-y-auto pr-1 lg:max-h-none">
@@ -862,18 +939,32 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
                               {stop.name}
                             </button>
 
-                            <span
-                              onClick={() => cycleStatus(stop.id)}
-                              className={`cursor-pointer text-[10.5px] font-semibold uppercase ${
-                                st === "done"
-                                  ? "text-[#3f8f5a]"
-                                  : st === "held"
-                                    ? "text-[#c2413b]"
-                                    : "text-[#7d8670]"
-                              }`}
-                            >
-                              {st}
-                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span
+                                onClick={() => cycleStatus(stop.id)}
+                                className={`cursor-pointer text-[10.5px] font-semibold uppercase ${
+                                  st === "done"
+                                    ? "text-[#3f8f5a]"
+                                    : st === "held"
+                                      ? "text-[#c2413b]"
+                                      : "text-[#7d8670]"
+                                }`}
+                              >
+                                {st}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeStop(stop.id);
+                                }}
+                                className="rounded p-0.5 text-[#7d8670] hover:text-[#c2413b] hover:bg-[#291615] transition cursor-pointer"
+                                title={`Remove ${stop.name} completely from map`}
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="mt-0.5 text-[11px] text-[#9aa38c]">
@@ -1082,13 +1173,46 @@ export default function RoutingDashboard({ onBack }: RoutingDashboardProps) {
                         <button
                           type="button"
                           onClick={() => addNextIncrementTag(stop.id)}
-                          className="text-[10px] font-mono text-[#d97706] hover:underline"
+                          className="text-[10.5px] font-mono text-[#d97706] hover:underline cursor-pointer"
                         >
                           + Tag {formatTag(tagPrefix, tagNextNumber)}
                         </button>
                         <span className="text-[10px] uppercase font-semibold text-[#3f8f5a]">
                           {st}
                         </span>
+                      </div>
+
+                      {/* Remove mark from map & remove tags */}
+                      <div className="mt-1.5 pt-1.5 border-t border-[#2c3426] flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeStop(stop.id);
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#c2413b] hover:text-[#e05252] cursor-pointer transition"
+                          title="Remove this mark completely from the map"
+                        >
+                          <Trash2 size={11} />
+                          Remove mark from map
+                        </button>
+                        {tags.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStopTags((prev) => {
+                                const next = { ...prev };
+                                delete next[stop.id];
+                                return next;
+                              });
+                            }}
+                            className="text-[10.5px] text-[#9aa38c] hover:text-[#e8eadf] cursor-pointer transition"
+                            title="Remove all tags from this drop"
+                          >
+                            Remove tags
+                          </button>
+                        )}
                       </div>
                     </div>
                   </Popup>

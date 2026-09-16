@@ -130,3 +130,23 @@ aside::-webkit-scrollbar-thumb,
   border-radius: 6px;
   box-shadow: none;
 }
+
+.leaflet-popup-content-wrapper {
+  background: #161a12 !important;
+  color: #e8eadf !important;
+  border: 1px solid #2c3426;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+.leaflet-popup-tip {
+  background: #161a12 !important;
+}
+
+.leaflet-popup-close-button {
+  color: #9aa38c !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: #f3f6ee !important;
+}
