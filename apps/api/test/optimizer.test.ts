@@ -28,6 +28,12 @@ test("multiple reloads, oversized stops, and missed windows are explicit", () =>
   const late = request([1], { stops: [{ id: "a", lat: 0, lng: 1, demand: 1, timeWindow: { start: "07:00", end: "07:30" } }] });
   expect(nearestNeighbor(late, matrix([[0, 60], [60, 0]])).unassigned).toEqual([{ id: "a", reason: "time-window-infeasible" }]);
 });
+test("a reload advances the clock and can make the next window infeasible", () => {
+  const input = request([10, 1], { stops: [{ id: "a", lat: 0, lng: 1, demand: 10 }, { id: "b", lat: 0, lng: 2, demand: 1, timeWindow: { start: "08:00", end: "08:02" } }] });
+  const result = nearestNeighbor(input, matrix([[0, 60, 600], [60, 0, 60], [600, 60, 0]]));
+  expect(result.trips.map(trip => trip.order)).toEqual([["a"]]);
+  expect(result.unassigned).toEqual([{ id: "b", reason: "time-window-infeasible" }]);
+});
 test("2-opt improves only a feasible capacity trip", () => {
   const input = request([2, 2, 2]); const poor = { ...evaluateRoute(input, ["a", "b", "c"], matrix([[0, 10, 1, 1], [1, 0, 10, 1], [10, 10, 0, 1], [1, 1, 10, 0]]), { returnToDepot: true }), trip: 1 };
   const result = improveTwoOpt(input, poor, matrix([[0, 10, 1, 1], [1, 0, 10, 1], [10, 10, 0, 1], [1, 1, 10, 0]]));
