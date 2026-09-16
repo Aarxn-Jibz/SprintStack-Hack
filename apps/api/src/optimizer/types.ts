@@ -1,0 +1,11 @@
+export type Point = { lat: number; lng: number };
+export type TimeWindow = { start: string; end: string };
+export type Stop = Point & { id: string; name?: string; demand?: number; serviceMinutes?: number; priority?: number; tags?: string[]; timeWindow?: TimeWindow };
+export type Depot = Point & { id?: string; name?: string };
+export type Vehicle = { capacity?: number; startTime?: string };
+export type OptimizeRequest = { depot: Depot; stops: Stop[]; manualOrder?: string[]; vehicle?: Vehicle; returnToDepot?: boolean };
+export type TravelMatrix = { durations: number[][]; distances: number[][] };
+export type RouteStop = Stop & { sequence: number; arrivalTime?: string; serviceStartTime?: string; serviceEndTime?: string; waitingSeconds: number; travelDurationSeconds: number; travelDistanceMeters: number; cumulativeDemand: number };
+export type Violation = { stopId?: string; type: "time-window" | "capacity" | "unreachable"; message: string };
+export type RouteEvaluation = { order: string[]; distanceMeters: number; travelDurationSeconds: number; waitingDurationSeconds: number; serviceDurationSeconds: number; totalDurationSeconds: number; feasible: boolean; stops: RouteStop[]; violations: Violation[] };
+export type RoutingMetadata = { provider: "osrm" | "haversine"; degraded: boolean };
